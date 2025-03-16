@@ -1,0 +1,47 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: self-hosted
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set environment variables
+      run: |
+        echo "VERSION=$(date +%Y%m%d)-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+        echo "REGISTRY=192.168.111.11:32243" >> $GITHUB_ENV
+
+    - name: Build Docker image
+      run: |
+        docker build -t ${{ env.REGISTRY }}/demo-app:${{ env.VERSION }} .
+        docker tag ${{ env.REGISTRY }}/demo-app:${{ env.VERSION }} ${{ env.REGISTRY }}/demo-app:latest
+
+    - name: Push to local registry
+      run: |
+        docker push ${{ env.REGISTRY }}/demo-app:${{ env.VERSION }}
+        docker push ${{ env.REGISTRY }}/demo-app:latest
+
+    - name: Update Kubernetes manifests
+      run: |
+        # 템플릿 변수 대체
+        find kubernetes -type f -name "*.yaml" -exec sed -i "s|\${IMAGE_NAME}|${{ env.REGISTRY }}/demo-app|g" {} \;
+        find kubernetes -type f -name "*.yaml" -exec sed -i "s|\${IMAGE_TAG}|${{ env.VERSION }}|g" {} \;
+
+        # 별도의 변경 사항 기록
+        echo "IMAGE_NAME=${{ env.REGISTRY }}/demo-app" > kubernetes/overlays/dev/image.properties
+        echo "IMAGE_TAG=${{ env.VERSION }}" >> kubernetes/overlays/dev/image.properties
+
+    - name: Commit and push updated manifests
+      run: |
+        git config --global user.name 'GitHub Actions'
+        git config --global user.email 'actions@github.com'
+        git add kubernetes/
+        git commit -m "Update image to version ${{ env.VERSION }}" || echo "No changes to commit"
+        git push
