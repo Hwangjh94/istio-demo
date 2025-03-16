@@ -1,0 +1,15 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: demo-app-timeout
+spec:
+  hosts:
+  - demo-app
+  http:
+  - route:
+    - destination:
+        host: demo-app
+    timeout: 1s
+    retries:
+      attempts: 3
+      perTryTimeout: 0.5s
